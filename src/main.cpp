@@ -235,10 +235,23 @@ int main() {
 
           	json msgJson;
 
+			cout << "Car x = " << car_x << " y = " << car_y << endl;
+			cout << "Car s = " << car_s << " d = " << car_d << endl;
+
           	vector<double> next_x_vals;
           	vector<double> next_y_vals;
 
-
+			double dist_inc = 0.5;
+			double new_s = car_s;
+			for(int i = 0; i < 50; ++i) {
+				// next_x_vals.push_back(car_x + (dist_inc * i) * cos(deg2rad(car_yaw)));
+				// next_y_vals.push_back(car_y + (dist_inc * i) * sin(deg2rad(car_yaw)));
+				new_s += dist_inc;
+				vector<double> xy = getXY(new_s, 6, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+				cout << "next xy = " << xy[0] << "," << xy[1] << endl;
+				next_x_vals.push_back(xy[0]);
+				next_y_vals.push_back(xy[1]);
+			}
           	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
           	msgJson["next_x"] = next_x_vals;
           	msgJson["next_y"] = next_y_vals;
@@ -290,83 +303,3 @@ int main() {
   }
   h.run();
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
