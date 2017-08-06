@@ -1,4 +1,6 @@
+#include <iostream>
 #include <vector>
+#include <deque>
 #include <algorithm>
 #include <random>
 #include <assert.h>
@@ -6,6 +8,7 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "Eigen-3.3/Eigen/LU"
 #include "trajectory.hpp"
+#include "spline.h"
 
 using namespace std;
 using Eigen::MatrixXd;
@@ -13,6 +16,7 @@ using Eigen::VectorXd;
 
 // Some constants
 const double target_speed = 50.0 * 1609.0 / 3600.0;
+const double time_step = 0.02;
 const int num_candidate_trajectories = 100;
 const FrenetPoint safety_zone_size {100, 3};
 
@@ -177,4 +181,95 @@ FrenetPoints generate_car_trajectory(EgoCar car, Behavior behavior, const Cars o
 
     // Generate Jerk minimizing trajectory to the best position
     return calculate_jerk_minimizing_trajectory(car, car_then, time_step);
+}
+
+double max_waypoint_time(const Waypoints &waypoints) {
+    if (waypoints.size() == 0) {
+        return 0.0;
+    }
+    return waypoints.back().t;
+}
+
+double min_waypoint_time(const Waypoints &waypoints) {
+    if (waypoints.size() == 0) {
+        return 0.0;
+    }
+    return waypoints.front().t;
+}
+
+void add_waypoint(Waypoints &waypoints, double time_step) {
+    assert(waypoints.size() > 0);
+    const Waypoint &latest_wp = waypoints.back();
+    FrenetPoint pos(latest_wp.pos.s + 20, 2);
+    double t = latest_wp.t + time_step;
+    assert(t > waypoints[0].t);
+    waypoints.push_back(Waypoint(pos, t));
+}
+
+void calculate_waypoint_splines(Waypoints waypoints, Transform2D sd_to_xy, tk::spline &x_spline, tk::spline &y_spline) {
+    const int n = waypoints.size();
+    assert(n >= 3);
+
+    Coeffs t, x, y;
+    for (Waypoint wp: waypoints) {
+        t.push_back(wp.t);
+        vector<double> xy = sd_to_xy(wp.pos.s, wp.pos.d);
+        x.push_back(xy[0]);
+        y.push_back(xy[1]);
+        cout << "sd_to_xy: " << wp.pos.s << ", " << wp.pos.d << " -> " << xy[0] << ", " << xy[1] << endl;
+    }   
+    assert(t.size() == n);
+    assert(t.size() == x.size());
+    assert(t.size() == y.size());
+    x_spline.set_points(t, x);
+    y_spline.set_points(t, y);
+}
+
+void generate_car_path(EgoCar ego_car, const int path_length, Transform2D sd_to_xy, const vector<double> prev_path_x, const vector<double> prev_path_y, vector<double> &path_x, vector<double> &path_y) {
+    static Waypoints waypoints = {Waypoint(ego_car.pos, 0.0)};
+    const double waypoint_lookahead_time = 3.0;
+    const double waypoint_lookbehind_time = 3.0;
+    const double waypoint_time_step = 1.0;
+    static double interpolation_time = 0.0;
+    static tk::spline x_spline;
+    static tk::spline y_spline;
+
+    const int prev_path_length = prev_path_x.size();
+    assert(prev_path_y.size() == prev_path_length);
+    assert(prev_path_length <= path_length);
+
+    // Check if we need to add a waypoint
+    int new_point_count = path_length - prev_path_x.size();
+    double max_interpolation_time = interpolation_time + new_point_count * time_step;
+    bool recalculate_splines = false;
+    cout << "Max interpolation time = " << max_interpolation_time << endl;
+    while (max_waypoint_time(waypoints) - max_interpolation_time < waypoint_lookahead_time) {
+        cout << "Adding waypoint" << endl;
+        add_waypoint(waypoints, waypoint_time_step);
+        recalculate_splines = true;
+    }
+    // Discard too old waypoints
+    while (max_interpolation_time - min_waypoint_time(waypoints) > waypoint_lookbehind_time) {
+        waypoints.pop_front();
+    }
+    for (auto wp: waypoints) {
+        cout << "Waypoint pos = " << wp.pos.s << ", " << wp.pos.d << " t = " << wp.t << endl;
+    }
+    if (recalculate_splines) {
+        calculate_waypoint_splines(waypoints, sd_to_xy, x_spline, y_spline);
+    }
+
+    // Copy the old path to the beginning of the new path
+    path_x = prev_path_x;
+    path_y = prev_path_y;
+    while (path_x.size() < path_length) {
+        interpolation_time += time_step;
+        double x = x_spline(interpolation_time);
+        double y = y_spline(interpolation_time);
+        path_x.push_back(x);
+        path_y.push_back(y);
+        cout << "Interpolating: t = " << interpolation_time << " xy = " << x << ", " << y << endl;
+    }
+
+    assert(path_x.size() == path_length && path_y.size() == path_length);
 }
