@@ -202,44 +202,6 @@ int get_prev_wp_index(double s, vector<double> &maps_s) {
 	return index - 1;
 }
 
-// void calculate_xy_splines(double car_s, double car_x, double car_y, double target_d,
-// 						  vector<double> &maps_s, vector<double> &maps_x, vector<double> &maps_y, 
-// 						  tk::spline &x_spline, tk::spline &y_spline) {
-// 	assert(target_d > 0 && target_d < 8);
-// 	int wp0_index = get_prev_wp_index(car_s, maps_s);
-// 	int wp1_index = (wp0_index + 1) % maps_s.size();
-// 	int wp2_index = (wp1_index + 1) % maps_s.size();
-
-// 	assert(maps_s[wp0_index] < car_s);
-// 	assert(maps_s[wp1_index] > car_s);
-// 	assert(maps_s[wp2_index] > car_s);
-// 	cout << "Car s = " << car_s << " wp0 s = " << maps_s[wp0_index] << " wp1 s = " << maps_s[wp1_index] << " wp2 s = " << maps_s[wp2_index] << endl;
-	
-// 	Coeffs s(4), x(4), y(4);
-// 	s[0] = maps_s[wp0_index];
-// 	vector<double> xy0 = getXY(s[0], target_d, maps_s, maps_x, maps_y);
-// 	x[0] = xy0[0];
-// 	y[0] = xy0[1];
-// 	s[1] = car_s;
-// 	x[1] = car_x;
-// 	y[1] = car_y;
-// 	s[2] = maps_s[wp1_index];
-// 	vector<double> xy2 = getXY(s[2], target_d, maps_s, maps_x, maps_y);
-// 	x[2] = xy2[0];
-// 	y[2] = xy2[1];
-// 	s[3] = maps_s[wp2_index];
-// 	vector<double> xy3 = getXY(s[3], target_d, maps_s, maps_x, maps_y);
-// 	x[3] = xy3[0];
-// 	y[3] = xy3[1];
-
-// 	x_spline.set_points(s, x);
-// 	y_spline.set_points(s, y);
-
-// 	for (int i = 0; i < 4; ++i) {
-// 		cout << "i = " << i << " s = " << s[i] << " x = " << x[i] << " x_spline = " << x_spline(s[i]) << " y = " << y[i] << " y_spline = " << y_spline(s[i]) << endl;
-// 	}
-// }
-
 int main() {
   uWS::Hub h;
 
@@ -320,6 +282,7 @@ int main() {
 			double car_speed_ms = car_speed * 1609.0 / 3600;
 			double car_estimated_acc = estimate_acceleration(car_speed_ms);
 
+			system("clear");
 			cout << "Car x = " << car_x << " y = " << car_y << endl;
 			cout << "Car s = " << car_s << " d = " << car_d << endl;
 			cout << "Car speed (m/s)= " << car_speed_ms << endl;
@@ -366,6 +329,7 @@ int main() {
 
 			// 	last_path_calculation_time = time_now();
 			// }
+
 
 			vector<double> next_x_vals;
 			vector<double> next_y_vals;

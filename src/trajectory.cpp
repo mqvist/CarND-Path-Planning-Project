@@ -15,7 +15,8 @@ using Eigen::MatrixXd;
 using Eigen::VectorXd;
 
 // Some constants
-const double target_speed = 50.0 * 1609.0 / 3600.0;
+const double target_speed = 45.0 * 1609.0 / 3600.0;
+const double max_acceleration = 8.0;
 const double time_step = 0.02;
 const int num_candidate_trajectories = 100;
 const FrenetPoint safety_zone_size {100, 3};
@@ -200,10 +201,16 @@ double min_waypoint_time(const Waypoints &waypoints) {
 void add_waypoint(Waypoints &waypoints, double time_step) {
     assert(waypoints.size() > 0);
     const Waypoint &latest_wp = waypoints.back();
-    FrenetPoint pos(latest_wp.pos.s + 20, 2);
+    double speed_diff = target_speed - latest_wp.speed;
+    assert(speed_diff >= 0);
+    double acc = min(max_acceleration, speed_diff / time_step);
+    double speed = latest_wp.speed + acc * time_step;
+    assert(acc >= 0);
+    double travel_distance = latest_wp.speed * time_step + 0.5 * acc * time_step * time_step;
+    FrenetPoint pos(latest_wp.pos.s + travel_distance, latest_wp.pos.d);
     double t = latest_wp.t + time_step;
     assert(t > waypoints[0].t);
-    waypoints.push_back(Waypoint(pos, t));
+    waypoints.push_back(Waypoint(pos, speed, t));
 }
 
 void calculate_waypoint_splines(Waypoints waypoints, Transform2D sd_to_xy, tk::spline &x_spline, tk::spline &y_spline) {
@@ -226,7 +233,7 @@ void calculate_waypoint_splines(Waypoints waypoints, Transform2D sd_to_xy, tk::s
 }
 
 void generate_car_path(EgoCar ego_car, const int path_length, Transform2D sd_to_xy, const vector<double> prev_path_x, const vector<double> prev_path_y, vector<double> &path_x, vector<double> &path_y) {
-    static Waypoints waypoints = {Waypoint(ego_car.pos, 0.0)};
+    static Waypoints waypoints = {Waypoint(ego_car.pos, 0.0, 0.0)};
     const double waypoint_lookahead_time = 3.0;
     const double waypoint_lookbehind_time = 3.0;
     const double waypoint_time_step = 1.0;

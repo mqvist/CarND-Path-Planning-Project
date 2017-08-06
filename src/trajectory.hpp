@@ -13,9 +13,10 @@ struct FrenetPoint {
 
 struct Waypoint {
     FrenetPoint pos;
+    double speed;
     double t;
 
-    Waypoint(FrenetPoint pos, double t) : pos(pos), t(t) {}
+    Waypoint(FrenetPoint pos, double speed, double t) : pos(pos), speed(speed), t(t) {}
 };
 
 struct Car {
