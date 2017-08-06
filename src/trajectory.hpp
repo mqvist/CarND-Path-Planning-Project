@@ -8,6 +8,7 @@ enum class Behavior {
 struct FrenetPoint {
     double s, d;
 
+    FrenetPoint() : s(0.0), d(0.0) {}
     FrenetPoint(double s, double d) : s(s), d(d) {}
 };
 
@@ -23,6 +24,7 @@ struct Car {
     FrenetPoint pos;
     FrenetPoint vel;
 
+    Car() {}
     Car(FrenetPoint pos, FrenetPoint vel) : pos(pos), vel(vel) {}
 
     Car predict(double time_step) {
@@ -44,6 +46,6 @@ typedef std::function<vector<double>(double, double)> Transform2D;
 inline int lane(FrenetPoint p) { return p.d / 4; }
 
 // FrenetPoints generate_car_trajectory(EgoCar car, Behavior behavior, const Cars other_cars, double time_step);
-void generate_car_path(EgoCar ego_car, int path_length, Transform2D sd_to_xy, const vector<double> prev_path_x, const vector<double> prev_path_y, vector<double> &path_x, vector<double> &path_y);
+void generate_car_path(EgoCar ego_car, const Cars &other_cars, int path_length, Transform2D sd_to_xy, const vector<double> prev_path_x, const vector<double> prev_path_y, vector<double> &path_x, vector<double> &path_y);
                     
 

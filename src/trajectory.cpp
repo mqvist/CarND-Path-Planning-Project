@@ -15,11 +15,12 @@ using Eigen::MatrixXd;
 using Eigen::VectorXd;
 
 // Some constants
-const double target_speed = 45.0 * 1609.0 / 3600.0;
+const double max_speed = 45.0 * 1609.0 / 3600.0;
 const double max_acceleration = 8.0;
 const double time_step = 0.02;
 const int num_candidate_trajectories = 100;
 const FrenetPoint safety_zone_size {100, 3};
+const double min_safe_s_distance = 20.0;
 
 // FrenetPoints sample_positions(FrenetPoint origin, double s_std_dev, int num_samples) {
 //     default_random_engine generator;
@@ -165,7 +166,7 @@ FrenetPoints generate_car_trajectory(EgoCar car, Behavior behavior, const Cars o
 
     // Cars car_predictions = predict_car_positions(other_cars, time_step);
     // // Assuming we drive at the target speed for one second
-    // FrenetPoint target_end_pos(car.pos.s + target_speed, car.pos.d);
+    // FrenetPoint target_end_pos(car.pos.s + max_speed, car.pos.d);
     // // Sample different end positions around the target
     // FrenetPoints candidate_end_positions = interpolate_position(car.pos, target_end_pos, 10);
     // // Calculate candidate end positions costs
@@ -198,14 +199,44 @@ double min_waypoint_time(const Waypoints &waypoints) {
     return waypoints.front().t;
 }
 
-void add_waypoint(Waypoints &waypoints, double time_step) {
+bool get_closest_car_ahead(const Cars &cars, FrenetPoint pos, double time_delta, Car &closest_car) {
+    double closest_distance = 10000;
+    bool closest_found = false;
+    for (Car car: cars) {
+        // Ignore cars that are not on the same lane as us
+        if (lane(car.pos) != lane(pos))
+            continue;
+        Car predicted_car = car.predict(time_delta);
+        double distance = predicted_car.pos.s - pos.s;
+        cout << "Car distance = " << distance << endl;
+        if (distance >= 0.0 && distance < closest_distance) {
+            closest_car = predicted_car;
+            closest_distance = distance;
+            closest_found = true;
+        }
+    }
+    return closest_found;
+}
+
+void add_waypoint(Waypoints &waypoints, double time_step, const Cars &other_cars, double current_time) {
     assert(waypoints.size() > 0);
     const Waypoint &latest_wp = waypoints.back();
+    double target_speed = max_speed;
+    double time_delta = latest_wp.t - current_time;
+    assert(time_delta >= 0);
+    Car car_ahead;
+    if (get_closest_car_ahead(other_cars, latest_wp.pos, time_delta, car_ahead)) {
+        double distance = car_ahead.pos.s - latest_wp.pos.s;
+        if (distance < min_safe_s_distance) {
+            target_speed = car_ahead.vel.s;
+        }
+    }
+
     double speed_diff = target_speed - latest_wp.speed;
-    assert(speed_diff >= 0);
-    double acc = min(max_acceleration, speed_diff / time_step);
+    double acc = speed_diff / time_step;
+    // Clamp the acceleration between [-max, max]
+    acc = min(max_acceleration, max(-max_acceleration, acc));
     double speed = latest_wp.speed + acc * time_step;
-    assert(acc >= 0);
     double travel_distance = latest_wp.speed * time_step + 0.5 * acc * time_step * time_step;
     FrenetPoint pos(latest_wp.pos.s + travel_distance, latest_wp.pos.d);
     double t = latest_wp.t + time_step;
@@ -223,7 +254,6 @@ void calculate_waypoint_splines(Waypoints waypoints, Transform2D sd_to_xy, tk::s
         vector<double> xy = sd_to_xy(wp.pos.s, wp.pos.d);
         x.push_back(xy[0]);
         y.push_back(xy[1]);
-        cout << "sd_to_xy: " << wp.pos.s << ", " << wp.pos.d << " -> " << xy[0] << ", " << xy[1] << endl;
     }   
     assert(t.size() == n);
     assert(t.size() == x.size());
@@ -232,7 +262,7 @@ void calculate_waypoint_splines(Waypoints waypoints, Transform2D sd_to_xy, tk::s
     y_spline.set_points(t, y);
 }
 
-void generate_car_path(EgoCar ego_car, const int path_length, Transform2D sd_to_xy, const vector<double> prev_path_x, const vector<double> prev_path_y, vector<double> &path_x, vector<double> &path_y) {
+void generate_car_path(EgoCar ego_car, const Cars &other_cars, const int path_length, Transform2D sd_to_xy, const vector<double> prev_path_x, const vector<double> prev_path_y, vector<double> &path_x, vector<double> &path_y) {
     static Waypoints waypoints = {Waypoint(ego_car.pos, 0.0, 0.0)};
     const double waypoint_lookahead_time = 3.0;
     const double waypoint_lookbehind_time = 3.0;
@@ -244,15 +274,16 @@ void generate_car_path(EgoCar ego_car, const int path_length, Transform2D sd_to_
     const int prev_path_length = prev_path_x.size();
     assert(prev_path_y.size() == prev_path_length);
     assert(prev_path_length <= path_length);
-
+    double current_time = interpolation_time - prev_path_length * time_step;
+    cout << "Current time = " << current_time << endl;
     // Check if we need to add a waypoint
-    int new_point_count = path_length - prev_path_x.size();
+    int new_point_count = path_length - prev_path_length;
     double max_interpolation_time = interpolation_time + new_point_count * time_step;
     bool recalculate_splines = false;
     cout << "Max interpolation time = " << max_interpolation_time << endl;
     while (max_waypoint_time(waypoints) - max_interpolation_time < waypoint_lookahead_time) {
         cout << "Adding waypoint" << endl;
-        add_waypoint(waypoints, waypoint_time_step);
+        add_waypoint(waypoints, waypoint_time_step, other_cars, current_time);
         recalculate_splines = true;
     }
     // Discard too old waypoints

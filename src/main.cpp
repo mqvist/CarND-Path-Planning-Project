@@ -282,7 +282,7 @@ int main() {
 			double car_speed_ms = car_speed * 1609.0 / 3600;
 			double car_estimated_acc = estimate_acceleration(car_speed_ms);
 
-			system("clear");
+			//system("clear");
 			cout << "Car x = " << car_x << " y = " << car_y << endl;
 			cout << "Car s = " << car_s << " d = " << car_d << endl;
 			cout << "Car speed (m/s)= " << car_speed_ms << endl;
@@ -295,17 +295,19 @@ int main() {
 			FrenetPoint acc(car_estimated_acc, 0);
 			EgoCar ego_car(pos, vel, acc);
 
-			// Cars other_cars;
-			// for (auto car_info: sensor_fusion) {
-			// 	double vx = car_info[3];
-			// 	double vy = car_info[4];
-			// 	double total_velocity = sqrt(vx * vx + vy * vy);
-			// 	double s = car_info[5];
-			// 	double d = car_info[6];
-			// 	FrenetPoint pos(s, d);
-			// 	FrenetPoint vel(total_velocity, 0);
-			// 	other_cars.push_back(Car(pos, vel));
-			// }
+			Cars other_cars;
+			for (auto car_info: sensor_fusion) {
+				double vx = car_info[3];
+				double vy = car_info[4];
+				double total_velocity = sqrt(vx * vx + vy * vy);
+				double s = car_info[5];
+				double d = car_info[6];
+				FrenetPoint pos(s, d);
+				FrenetPoint vel(total_velocity, 0);
+				other_cars.push_back(Car(pos, vel));
+			}
+
+			cout << "Other cars = " << other_cars.size() << endl;
 
 			// tk::spline x_spline;
 			// tk::spline y_spline;
@@ -338,7 +340,7 @@ int main() {
 				return getXY(s, d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 			};
 
-			generate_car_path(ego_car, 50, sd_to_xy, previous_path_x, previous_path_y, next_x_vals, next_y_vals);
+			generate_car_path(ego_car, other_cars, 50, sd_to_xy, previous_path_x, previous_path_y, next_x_vals, next_y_vals);
 			
 			msgJson["next_x"] = next_x_vals;
 			msgJson["next_y"] = next_y_vals;
