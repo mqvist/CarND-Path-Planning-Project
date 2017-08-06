@@ -5,14 +5,16 @@
 #include <iostream>
 #include <thread>
 #include <vector>
-#include "Eigen-3.3/Eigen/Core"
-#include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
+#include "trajectory.hpp"
+#include "spline.h"
 
 using namespace std;
 
 // for convenience
 using json = nlohmann::json;
+typedef chrono::time_point<chrono::steady_clock> TimePoint;
+
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
@@ -156,7 +158,91 @@ vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> m
 	double y = seg_y + d*sin(perp_heading);
 
 	return {x,y};
+}
 
+TimePoint time_now() {
+	return chrono::steady_clock::now();
+}
+
+double time_diff(TimePoint tp1, TimePoint tp2) {
+	chrono::duration<double> elapsed = tp2 - tp1;
+	return elapsed.count();
+}
+
+double estimate_acceleration(double speed) {
+	static vector<double> speeds(10);
+	static vector<TimePoint> time_points(10);
+	static int index = 0;
+
+	TimePoint now = time_now();
+	speeds[index] = speed;
+	time_points[index] = now;
+
+	double sum_acc = 0.0;
+	for (int i = 0, j = index; i < 9; ++i, j = (j + 9) % 10) {
+		int k = (j + 9) % 10;
+		double speed_change = speeds[j] - speeds[k];
+		double time_delta = time_diff(time_points[k], time_points[j]);
+		assert (time_delta >= 0.0);
+		if (time_delta)
+			sum_acc += speed_change / time_delta;
+	}
+	double avg_acc = sum_acc / 10;
+	index = (index + 1) % 10;
+	return avg_acc;
+}
+
+int get_prev_wp_index(double s, vector<double> &maps_s) {
+	int index = 0;
+
+	while(s > maps_s[index] && index < maps_s.size())
+	{
+		index++;
+	}
+	assert(index < maps_s.size());
+	return index - 1;
+}
+
+void calculate_xy_splines(double car_s, double car_x, double car_y, double target_d,
+						  vector<double> &maps_s, vector<double> &maps_x, vector<double> &maps_y, 
+						  tk::spline &x_spline, tk::spline &y_spline) {
+	assert(target_d > 0 && target_d < 8);
+	int wp0_index = get_prev_wp_index(car_s, maps_s);
+	int wp1_index = (wp0_index + 1) % maps_s.size();
+	int wp2_index = (wp1_index + 1) % maps_s.size();
+
+	assert(maps_s[wp0_index] < car_s);
+	assert(maps_s[wp1_index] > car_s);
+	assert(maps_s[wp2_index] > car_s);
+	cout << "Car s = " << car_s << " wp0 s = " << maps_s[wp0_index] << " wp1 s = " << maps_s[wp1_index] << " wp2 s = " << maps_s[wp2_index] << endl;
+	
+	Coeffs s(4), x(4), y(4);
+	s[0] = maps_s[wp0_index];
+	vector<double> xy0 = getXY(s[0], target_d, maps_s, maps_x, maps_y);
+	x[0] = xy0[0];
+	y[0] = xy0[1];
+	s[1] = car_s;
+	x[1] = car_x;
+	y[1] = car_y;
+	s[2] = maps_s[wp1_index];
+	vector<double> xy2 = getXY(s[2], target_d, maps_s, maps_x, maps_y);
+	x[2] = xy2[0];
+	y[2] = xy2[1];
+	s[3] = maps_s[wp2_index];
+	vector<double> xy3 = getXY(s[3], target_d, maps_s, maps_x, maps_y);
+	x[3] = xy3[0];
+	y[3] = xy3[1];
+
+	x_spline.set_points(s, x);
+	y_spline.set_points(s, y);
+
+	for (int i = 0; i < 4; ++i) {
+		cout << "i = " << i << " s = " << s[i] << " x = " << x[i] << " x_spline = " << x_spline(s[i]) << " y = " << y[i] << " y_spline = " << y_spline(s[i]) << endl;
+	}
+}
+
+vector<double> interpolate_xy(tk::spline x_spline, tk::spline y_spline, double s) {
+	return {x_spline(s), y_spline(s)};
 }
 
 int main() {
@@ -196,13 +282,14 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
-                     uWS::OpCode opCode) {
+  h.onMessage([&map_waypoints_x, &map_waypoints_y, &map_waypoints_s, &map_waypoints_dx, &map_waypoints_dy]
+  	(uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,  uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
     //auto sdata = string(data).substr(0, length);
     //cout << sdata << endl;
+	static TimePoint last_path_calculation_time;
     if (length && length > 2 && data[0] == '4' && data[1] == '2') {
 
       auto s = hasData(data);
@@ -235,32 +322,65 @@ int main() {
 
           	json msgJson;
 
+			double car_speed_ms = car_speed * 1609.0 / 3600;
+			double car_estimated_acc = estimate_acceleration(car_speed_ms);
+
 			cout << "Car x = " << car_x << " y = " << car_y << endl;
 			cout << "Car s = " << car_s << " d = " << car_d << endl;
+			cout << "Car speed (m/s)= " << car_speed_ms << endl;
+			cout << "Car estimated acceleration = " << car_estimated_acc << endl;
 
-          	vector<double> next_x_vals;
-          	vector<double> next_y_vals;
+			cout << "Previous path length = " << previous_path_x.size() << endl;
 
-			double dist_inc = 0.5;
-			double new_s = car_s;
-			for(int i = 0; i < 50; ++i) {
-				// next_x_vals.push_back(car_x + (dist_inc * i) * cos(deg2rad(car_yaw)));
-				// next_y_vals.push_back(car_y + (dist_inc * i) * sin(deg2rad(car_yaw)));
-				new_s += dist_inc;
-				vector<double> xy = getXY(new_s, 6, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-				cout << "next xy = " << xy[0] << "," << xy[1] << endl;
-				next_x_vals.push_back(xy[0]);
-				next_y_vals.push_back(xy[1]);
+			if (time_diff(last_path_calculation_time, time_now()) < 4.0) {
+				msgJson["next_x"] = previous_path_x;
+          		msgJson["next_y"] = previous_path_y;	
 			}
-          	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
-          	msgJson["next_x"] = next_x_vals;
-          	msgJson["next_y"] = next_y_vals;
+			else {
+				FrenetPoint pos(car_s, car_d);
+				FrenetPoint vel(car_speed_ms, 0);
+				FrenetPoint acc(car_estimated_acc, 0);
+				EgoCar car(pos, vel, acc);
+
+				Cars other_cars;
+				for (auto car_info: sensor_fusion) {
+					double vx = car_info[3];
+					double vy = car_info[4];
+					double total_velocity = sqrt(vx * vx + vy * vy);
+					double s = car_info[5];
+					double d = car_info[6];
+					FrenetPoint pos(s, d);
+					FrenetPoint vel(total_velocity, 0);
+					other_cars.push_back(Car(pos, vel));
+				}
+
+				tk::spline x_spline;
+				tk::spline y_spline;
+				calculate_xy_splines(car_s, car_x, car_y, 6, map_waypoints_s, map_waypoints_x, map_waypoints_y, x_spline, y_spline);
+
+				FrenetPoints trajectory = generate_car_trajectory(car, Behavior::keep_lane, other_cars, 5);
+				vector<double> next_x_vals;
+				vector<double> next_y_vals;
+				cout << "Trajectory:" << endl;
+				for (auto point: trajectory) {
+					cout << "s = " << point.s << " d = " << point.d << endl;
+					//vector<double> xy = getXY(point.s, point.d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+					vector<double> xy = interpolate_xy(x_spline, y_spline, point.s);
+					cout << "x = " << xy[0] << " y = " << xy[1] << endl;
+					next_x_vals.push_back(xy[0]);
+					next_y_vals.push_back(xy[1]);
+				}
+
+				msgJson["next_x"] = next_x_vals;
+				msgJson["next_y"] = next_y_vals;
+
+				last_path_calculation_time = time_now();
+			}
 
           	auto msg = "42[\"control\","+ msgJson.dump()+"]";
 
           	//this_thread::sleep_for(chrono::milliseconds(1000));
           	ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
-          
         }
       } else {
         // Manual driving
