@@ -32,20 +32,15 @@ struct Car {
     }
 };
 
-struct EgoCar : public Car {
-    FrenetPoint acc;
-
-    EgoCar(FrenetPoint pos, FrenetPoint vel, FrenetPoint acc) : Car(pos, vel), acc(acc) {}
-};
-
 typedef vector<FrenetPoint> FrenetPoints;
 typedef vector<Car> Cars;
 typedef vector<double> Coeffs;
 typedef deque<Waypoint> Waypoints;
 typedef std::function<vector<double>(double, double)> Transform2D;
-inline int lane(FrenetPoint p) { return p.d / 4; }
+inline int lane_no(FrenetPoint p) { return p.d / 4; }
+inline double lane_center(int lane_no) { return 2.0 + lane_no * 4.0; }
 
 // FrenetPoints generate_car_trajectory(EgoCar car, Behavior behavior, const Cars other_cars, double time_step);
-void generate_car_path(EgoCar ego_car, const Cars &other_cars, int path_length, Transform2D sd_to_xy, const vector<double> prev_path_x, const vector<double> prev_path_y, vector<double> &path_x, vector<double> &path_y);
+void generate_car_path(Car ego_car, const Cars &other_cars, int path_length, Transform2D sd_to_xy, const vector<double> prev_path_x, const vector<double> prev_path_y, vector<double> &path_x, vector<double> &path_y);
                     
 

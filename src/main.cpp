@@ -39,6 +39,7 @@ double distance(double x1, double y1, double x2, double y2)
 {
 	return sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1));
 }
+
 int ClosestWaypoint(double x, double y, vector<double> maps_x, vector<double> maps_y)
 {
 
@@ -159,49 +160,6 @@ vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> m
 	return {x,y};
 }
 
-TimePoint time_now() {
-	return chrono::steady_clock::now();
-}
-
-double time_diff(TimePoint tp1, TimePoint tp2) {
-	chrono::duration<double> elapsed = tp2 - tp1;
-	return elapsed.count();
-}
-
-double estimate_acceleration(double speed) {
-	static vector<double> speeds(10);
-	static vector<TimePoint> time_points(10);
-	static int index = 0;
-
-	TimePoint now = time_now();
-	speeds[index] = speed;
-	time_points[index] = now;
-
-	double sum_acc = 0.0;
-	for (int i = 0, j = index; i < 9; ++i, j = (j + 9) % 10) {
-		int k = (j + 9) % 10;
-		double speed_change = speeds[j] - speeds[k];
-		double time_delta = time_diff(time_points[k], time_points[j]);
-		assert (time_delta >= 0.0);
-		if (time_delta)
-			sum_acc += speed_change / time_delta;
-	}
-	double avg_acc = sum_acc / 10;
-	index = (index + 1) % 10;
-	return avg_acc;
-}
-
-int get_prev_wp_index(double s, vector<double> &maps_s) {
-	int index = 0;
-
-	while(s > maps_s[index] && index < maps_s.size())
-	{
-		index++;
-	}
-	assert(index < maps_s.size());
-	return index - 1;
-}
-
 int main() {
   uWS::Hub h;
 
@@ -280,20 +238,17 @@ int main() {
           	json msgJson;
 
 			double car_speed_ms = car_speed * 1609.0 / 3600;
-			double car_estimated_acc = estimate_acceleration(car_speed_ms);
 
 			//system("clear");
 			cout << "Car x = " << car_x << " y = " << car_y << endl;
 			cout << "Car s = " << car_s << " d = " << car_d << endl;
 			cout << "Car speed (m/s)= " << car_speed_ms << endl;
-			cout << "Car estimated acceleration = " << car_estimated_acc << endl;
 
 			cout << "Previous path length = " << previous_path_x.size() << endl;
 
 			FrenetPoint pos(car_s, car_d);
 			FrenetPoint vel(car_speed_ms, 0);
-			FrenetPoint acc(car_estimated_acc, 0);
-			EgoCar ego_car(pos, vel, acc);
+			Car ego_car(pos, vel);
 
 			Cars other_cars;
 			for (auto car_info: sensor_fusion) {
@@ -308,30 +263,6 @@ int main() {
 			}
 
 			cout << "Other cars = " << other_cars.size() << endl;
-
-			// tk::spline x_spline;
-			// tk::spline y_spline;
-			// calculate_xy_splines(car_s, car_x, car_y, 6, map_waypoints_s, map_waypoints_x, map_waypoints_y, x_spline, y_spline);
-
-			// 	FrenetPoints trajectory = generate_car_trajectory(car, Behavior::keep_lane, other_cars, 5);
-			// 	vector<double> next_x_vals;
-			// 	vector<double> next_y_vals;
-			// 	cout << "Trajectory:" << endl;
-			// 	for (auto point: trajectory) {
-			// 		cout << "s = " << point.s << " d = " << point.d << endl;
-			// 		//vector<double> xy = getXY(point.s, point.d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-			// 		vector<double> xy = interpolate_xy(x_spline, y_spline, point.s);
-			// 		cout << "x = " << xy[0] << " y = " << xy[1] << endl;
-			// 		next_x_vals.push_back(xy[0]);
-			// 		next_y_vals.push_back(xy[1]);
-			// 	}
-
-			// 	msgJson["next_x"] = next_x_vals;
-			// 	msgJson["next_y"] = next_y_vals;
-
-			// 	last_path_calculation_time = time_now();
-			// }
-
 
 			vector<double> next_x_vals;
 			vector<double> next_y_vals;
