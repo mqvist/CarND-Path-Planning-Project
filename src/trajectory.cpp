@@ -16,11 +16,11 @@ using Eigen::VectorXd;
 
 // Some constants
 const double max_speed = 45.0 * 1609.0 / 3600.0;
-const double max_acceleration = 8.0;
+const double max_acceleration = 6.0;
 const double time_step = 0.02;
 const int num_candidate_trajectories = 100;
 const FrenetPoint safety_zone_size {100, 3};
-const double min_safe_s_distance = 50.0;
+const double min_safe_s_distance = 40.0;
 
 double max_waypoint_time(const Waypoints &waypoints) {
     if (waypoints.size() == 0) {
@@ -36,53 +36,49 @@ double min_waypoint_time(const Waypoints &waypoints) {
     return waypoints.front().t;
 }
 
-bool get_closest_car_ahead(const Cars &cars, FrenetPoint pos, double time_delta, Car &closest_car) {
-    double closest_distance = 10000;
-    bool closest_found = false;
-    for (Car car: cars) {
-        // Ignore cars that are not on the same lane as us
-        if (lane_no(car.pos) != lane_no(pos))
-            continue;
-        Car predicted_car = car.predict(time_delta);
-        double distance = predicted_car.pos.s - pos.s;
-        cout << "Car distance = " << distance << endl;
-        if (distance >= 0.0 && distance < closest_distance) {
-            closest_car = predicted_car;
-            closest_distance = distance;
-            closest_found = true;
-        }
-    }
-    return closest_found;
-}
-
 void get_target_lane_and_speed(FrenetPoint pos, const Cars &other_cars, double time_delta, int &target_lane, double &target_speed) {
+    assert(time_delta > 0);
+    vector<double> closest_ahead_distance = {10000, 10000, 10000};
     vector<Car> lane_cars_ahead(3);
-    vector<bool> lane_free = {true, true, true};
-    for (int lane = 0; lane < 3; ++lane) {
-        FrenetPoint lane_pos(pos.s, lane_center(lane));
-        if (get_closest_car_ahead(other_cars, lane_pos, time_delta, lane_cars_ahead[lane])) {
-            double distance = lane_cars_ahead[lane].pos.s - pos.s;
-            if (distance < min_safe_s_distance) {
-                lane_free[lane] = false;
-            }
+    vector<bool> lane_free_ahead = {true, true, true};
+    vector<bool> lane_free_for_change = {true, true, true};
+    const int current_lane = lane_no(pos);
+
+    for (Car car: other_cars) {
+        int lane = lane_no(car.pos);
+        FrenetPoint predicted_pos = car.predict_pos(time_delta);
+        double distance = predicted_pos.s - pos.s;
+        // Determine the closest car ahead
+        if (distance > 0 && distance < closest_ahead_distance[lane]) {
+            lane_cars_ahead[lane] = car;
+            closest_ahead_distance[lane] = distance;
+        }
+        // Check if the lane is free. Consider cars that are both ahead and behind.
+        if (distance > 0 && distance < min_safe_s_distance) {
+            lane_free_ahead[lane] = false;
+            lane_free_for_change[lane] = false;
+        }
+        else if (distance <= 0 && distance > -1.5 * min_safe_s_distance) {
+            lane_free_for_change[lane] = false;
         }
     }
-    int current_lane = lane_no(pos);
     // If current lane is free, keep driving it at max speed
-    if (lane_free[current_lane]) {
+    if (lane_free_ahead[current_lane]) {
         target_lane = current_lane;
         target_speed = max_speed;
         return;
     }
-    // Check if any of the lanes are free
+    // Check if any of the lanes are free for lane change
     for (int lane = 0; lane < 3; lane++) {
-        if (lane_free[lane]) {
+        if (lane_free_for_change[lane]) {
             target_lane = lane;
             target_speed = max_speed;
             return;
         }
     }
-    assert(0);
+    // Keep driving the current lane, limit speed to same as the car ahead
+    target_lane = current_lane;
+    target_speed = min(max_speed, lane_cars_ahead[current_lane].vel.s);
 }
 
 void add_waypoint(Waypoints &waypoints, double time_step, const Cars &other_cars, double current_time) {

@@ -27,8 +27,8 @@ struct Car {
     Car() {}
     Car(FrenetPoint pos, FrenetPoint vel) : pos(pos), vel(vel) {}
 
-    Car predict(double time_step) {
-        return Car(FrenetPoint(pos.s + vel.s * time_step, pos.d + vel.d * time_step), vel);
+    FrenetPoint predict_pos(double time_step) {
+        return FrenetPoint(pos.s + vel.s * time_step, pos.d + vel.d * time_step);
     }
 };
 
