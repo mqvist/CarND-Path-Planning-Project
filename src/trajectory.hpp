@@ -1,10 +1,6 @@
 using std::vector;
 using std::deque;
 
-enum class Behavior {
-    keep_lane, change_lane_left, change_lane_right
-};
-
 struct FrenetPoint {
     double s, d;
 
